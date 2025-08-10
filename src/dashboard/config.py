@@ -18,7 +18,7 @@ class DashboardConfig:
     
     # Server Configuration
     HOST = os.getenv('DASHBOARD_HOST', '0.0.0.0')
-    PORT = int(os.getenv('DASHBOARD_PORT', 8050))
+    PORT = int(os.getenv('DASHBOARD_PORT', 8051))
     DEBUG = os.getenv('DASHBOARD_DEBUG', 'True').lower() == 'true'
     
     # Data Configuration

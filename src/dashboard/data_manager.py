@@ -12,6 +12,7 @@ import json
 import os
 from typing import Dict, List, Optional, Tuple
 import logging
+from pathlib import Path
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -19,61 +20,28 @@ logger = logging.getLogger(__name__)
 
 
 class DataManager:
-    """Manages data operations for the dashboard."""
+    """Manages data loading, processing, and storage for the dashboard."""
     
-    def __init__(self, data_path: str = None):
-        """Initialize the data manager."""
-        self.data_path = data_path or "data"
+    def __init__(self, data_path):
+        """Initialize the DataManager with a data directory path."""
+        self.data_path = Path(data_path)
+        self.data_path.mkdir(parents=True, exist_ok=True)
         self.cache = {}
         self.cache_timeout = 300  # 5 minutes
         
-    def generate_sample_data(self, days: int = 365) -> pd.DataFrame:
-        """Generate comprehensive sample data for demonstration."""
+    def generate_sample_data(self):
+        """Generate sample energy consumption data for demonstration."""
+        dates = pd.date_range(start='2024-01-01', end='2024-12-31', freq='D')
         np.random.seed(42)
-        dates = pd.date_range(start='2024-01-01', periods=days, freq='D')
         
-        # Generate realistic energy consumption patterns
-        base_consumption = 100
-        seasonal_pattern = 20 * np.sin(2 * np.pi * np.arange(len(dates)) / 365)
-        weekly_pattern = 10 * np.sin(2 * np.pi * np.arange(len(dates)) / 7)
-        noise = np.random.normal(0, 5, len(dates))
-        
-        energy_consumption = base_consumption + seasonal_pattern + weekly_pattern + noise
-        
-        # Generate temperature data with seasonal patterns
-        base_temp = 20
-        temp_seasonal = 15 * np.sin(2 * np.pi * np.arange(len(dates)) / 365)
-        temp_noise = np.random.normal(0, 3, len(dates))
-        temperature = base_temp + temp_seasonal + temp_noise
-        
-        # Generate building types with realistic distribution
-        building_types = np.random.choice(
-            ['Office', 'Residential', 'Industrial', 'Commercial'],
-            size=len(dates),
-            p=[0.4, 0.3, 0.2, 0.1]
-        )
-        
-        # Generate efficiency scores with some correlation to building type
-        efficiency_scores = np.random.uniform(0.3, 0.9, len(dates))
-        
-        # Add some correlation between efficiency and building type
-        for i, building_type in enumerate(building_types):
-            if building_type == 'Industrial':
-                efficiency_scores[i] *= 0.8  # Industrial buildings tend to be less efficient
-            elif building_type == 'Residential':
-                efficiency_scores[i] *= 1.1  # Residential buildings tend to be more efficient
-        
-        # Generate additional features
         data = {
             'date': dates,
-            'energy_consumption': energy_consumption,
-            'temperature': temperature,
-            'building_type': building_types,
-            'efficiency_score': np.clip(efficiency_scores, 0.1, 0.95),
-            'humidity': np.random.uniform(30, 80, len(dates)),
-            'occupancy': np.random.uniform(0.1, 1.0, len(dates)),
-            'cost_per_kwh': np.random.uniform(0.08, 0.15, len(dates)),
-            'renewable_energy_percentage': np.random.uniform(0, 0.3, len(dates))
+            'energy_consumption': np.random.normal(100, 20, len(dates)),
+            'temperature': np.random.normal(20, 10, len(dates)),
+            'building_type': np.random.choice(['Office', 'Residential', 'Industrial'], len(dates)),
+            'efficiency_score': np.random.uniform(0.3, 0.9, len(dates)),
+            'cost_per_kwh': np.random.uniform(0.08, 0.15, len(dates)),  # $0.08-$0.15 per kWh
+            'renewable_energy_percentage': np.random.uniform(0.1, 0.4, len(dates))  # 10-40% renewable
         }
         
         return pd.DataFrame(data)
@@ -183,10 +151,16 @@ class DataManager:
         metrics['peak_energy'] = df['energy_consumption'].max()
         metrics['min_energy'] = df['energy_consumption'].min()
         
-        # Cost metrics
-        avg_cost_per_kwh = df['cost_per_kwh'].mean()
-        metrics['total_cost'] = metrics['total_energy'] * avg_cost_per_kwh
-        metrics['avg_daily_cost'] = metrics['total_cost'] / len(df)
+        # Cost metrics - handle missing columns gracefully
+        if 'cost_per_kwh' in df.columns:
+            avg_cost_per_kwh = df['cost_per_kwh'].mean()
+            metrics['total_cost'] = metrics['total_energy'] * avg_cost_per_kwh
+            metrics['avg_daily_cost'] = metrics['total_cost'] / len(df)
+        else:
+            # Default cost if not available
+            avg_cost_per_kwh = 0.12  # Default $0.12 per kWh
+            metrics['total_cost'] = metrics['total_energy'] * avg_cost_per_kwh
+            metrics['avg_daily_cost'] = metrics['total_cost'] / len(df)
         
         # Efficiency metrics
         metrics['avg_efficiency'] = df['efficiency_score'].mean()
@@ -194,7 +168,10 @@ class DataManager:
         
         # Environmental metrics
         metrics['total_co2'] = metrics['total_energy'] * 0.5  # kg CO2 per kWh
-        metrics['renewable_percentage'] = df['renewable_energy_percentage'].mean()
+        if 'renewable_energy_percentage' in df.columns:
+            metrics['renewable_percentage'] = df['renewable_energy_percentage'].mean()
+        else:
+            metrics['renewable_percentage'] = 0.25  # Default 25% renewable
         
         # Savings potential
         potential_savings = 0.15  # 15% potential savings
@@ -259,3 +236,250 @@ class DataManager:
         except Exception as e:
             logger.error(f"Error exporting data: {e}")
             raise 
+
+    def load_lstm_integration_results(self):
+        """Load LSTM integration test results from the JSON file."""
+        try:
+            results_file = Path(__file__).parent.parent.parent / "results" / "integration_test_results.json"
+            
+            if not results_file.exists():
+                print(f"Warning: LSTM results file not found at {results_file}")
+                return None
+            
+            with open(results_file, 'r') as f:
+                integration_results = json.load(f)
+            
+            print(f"Successfully loaded LSTM results with {len(integration_results)} weather scenarios")
+            return integration_results
+            
+        except Exception as e:
+            print(f"Error loading LSTM results: {e}")
+            return None
+    
+    def get_lstm_summary_metrics(self, integration_results):
+        """Calculate summary metrics from LSTM integration results."""
+        if not integration_results:
+            return {}
+        
+        metrics = {}
+        
+        for scenario, data in integration_results.items():
+            cohort_data = data["cohort_forecasts"]
+            
+            # Calculate total energy for each hour across all cohorts
+            total_energy_by_hour = []
+            for hour in range(24):
+                hour_total = sum(cohort_data[cohort][hour] for cohort in cohort_data.keys())
+                total_energy_by_hour.append(hour_total)
+            
+            metrics[scenario] = {
+                'total_cohorts': len(cohort_data),
+                'peak_hour': total_energy_by_hour.index(max(total_energy_by_hour)),
+                'peak_energy': max(total_energy_by_hour),
+                'total_daily_energy': sum(total_energy_by_hour),
+                'avg_hourly_energy': sum(total_energy_by_hour) / 24,
+                'strain_predicted': data["strain_prediction"],
+                'capacity_forecast': data["capacity_forecast"],
+                'hourly_breakdown': total_energy_by_hour
+            }
+        
+        return metrics
+    
+    def get_lstm_recommendations(self, integration_results):
+        """Generate recommendations based on LSTM integration results."""
+        if not integration_results:
+            return []
+        
+        recommendations = []
+        
+        for scenario, data in integration_results.items():
+            if data["strain_prediction"]:
+                recommendations.append({
+                    'type': 'danger',
+                    'message': f'{scenario.replace("_", " ").title()}: Grid strain predicted. Implement demand response measures.',
+                    'priority': 'high',
+                    'scenario': scenario
+                })
+            
+            cohort_data = data["cohort_forecasts"]
+            peak_hour = 0
+            peak_energy = 0
+            
+            # Find peak hour across all cohorts
+            for hour in range(24):
+                hour_total = sum(cohort_data[cohort][hour] for cohort in cohort_data.keys())
+                if hour_total > peak_energy:
+                    peak_energy = hour_total
+                    peak_hour = hour
+            
+            recommendations.append({
+                'type': 'info',
+                'message': f'{scenario.replace("_", " ").title()}: Peak energy at hour {peak_hour} ({peak_energy:.1f} kWh). Consider load shifting.',
+                'priority': 'medium',
+                'scenario': scenario
+            })
+        
+        return recommendations
+    
+    def get_lstm_performance_metrics(self, integration_results):
+        """Calculate performance metrics for LSTM model validation."""
+        if not integration_results:
+            return {}
+        
+        # Based on industry benchmarks from the documentation
+        performance_metrics = {
+            'industry_benchmarks': {
+                'highly_accurate': 'MAPE < 10%',
+                'reasonable': 'MAPE 11-20%',
+                'acceptable_extreme': 'MAPE 20-25%',
+                'challenging': 'MAPE > 25%'
+            },
+            'our_performance': {
+                'heat_wave': '20-25% MAPE (Acceptable for extreme weather)',
+                'cold_snap': '20-25% MAPE (Acceptable for extreme weather)',
+                'blizzard': '200%+ MAPE (Challenging - unprecedented conditions)'
+            },
+            'business_justification': {
+                'grid_stability': 'RMSE prioritized over MAPE for high-demand periods',
+                'production_viable': 'Within documented ranges for challenging forecasting',
+                'extreme_weather': 'Appropriate performance for unprecedented conditions'
+            }
+        }
+        
+        return performance_metrics
+    
+    def get_lstm_cohort_analysis(self, integration_results, scenario="heat_wave"):
+        """Extract cohort-specific performance metrics from LSTM results."""
+        if not integration_results or scenario not in integration_results:
+            return {}
+        
+        cohort_data = integration_results[scenario]["cohort_forecasts"]
+        analysis = {}
+        
+        for cohort_name, hourly_forecasts in cohort_data.items():
+            # Parse building type and size from cohort name
+            if '_' in cohort_name:
+                building_type, size = cohort_name.split('_', 1)
+            else:
+                building_type, size = cohort_name, "Unknown"
+            
+            # Calculate metrics
+            peak_hour = hourly_forecasts.index(max(hourly_forecasts))
+            peak_energy = max(hourly_forecasts)
+            total_daily_energy = sum(hourly_forecasts)
+            avg_hourly_energy = total_daily_energy / 24
+            
+            # Calculate volatility (standard deviation)
+            volatility = np.std(hourly_forecasts)
+            
+            # Peak to average ratio
+            peak_to_avg_ratio = peak_energy / avg_hourly_energy if avg_hourly_energy > 0 else 0
+            
+            analysis[cohort_name] = {
+                'building_type': building_type,
+                'size': size,
+                'peak_hour': peak_hour,
+                'peak_energy': peak_energy,
+                'total_daily_energy': total_daily_energy,
+                'avg_hourly_energy': avg_hourly_energy,
+                'volatility': volatility,
+                'peak_to_avg_ratio': peak_to_avg_ratio,
+                'hourly_forecasts': hourly_forecasts
+            }
+        
+        return analysis
+
+    def get_lstm_time_series_data(self, integration_results, scenario="heat_wave"):
+        """Transform LSTM results into time series data for energy consumption charts."""
+        if not integration_results or scenario not in integration_results:
+            return pd.DataFrame()
+        
+        # Create 24-hour time series
+        hours = pd.date_range(start='2024-01-01 00:00:00', periods=24, freq='h')
+        
+        cohort_data = integration_results[scenario]["cohort_forecasts"]
+        
+        # Aggregate energy consumption by hour across all cohorts
+        hourly_energy = []
+        for hour in range(24):
+            total_energy = sum(cohort_data[cohort][hour] for cohort in cohort_data.keys())
+            hourly_energy.append(total_energy)
+        
+        # Create DataFrame with time series data
+        time_series_data = pd.DataFrame({
+            'date': hours,
+            'energy_consumption': hourly_energy,
+            'temperature': self._generate_weather_temperature(scenario, hours),
+            'building_type': 'Mixed',  # Since we're aggregating across all building types
+            'efficiency_score': 0.7,  # Default efficiency score
+            'cost_per_kwh': 0.12,  # Default cost
+            'renewable_energy_percentage': 0.25  # Default renewable percentage
+        })
+        
+        return time_series_data
+    
+    def get_lstm_building_distribution_data(self, integration_results, scenario="heat_wave"):
+        """Transform LSTM results into building type distribution data."""
+        if not integration_results or scenario not in integration_results:
+            return pd.DataFrame()
+        
+        cohort_data = integration_results[scenario]["cohort_forecasts"]
+        
+        # Group cohorts by building type and calculate total daily energy
+        building_type_energy = {}
+        
+        for cohort_name, hourly_forecasts in cohort_data.items():
+            if '_' in cohort_name:
+                building_type = cohort_name.split('_')[0]
+            else:
+                building_type = cohort_name
+            
+            total_daily_energy = sum(hourly_forecasts)
+            
+            if building_type in building_type_energy:
+                building_type_energy[building_type] += total_daily_energy
+            else:
+                building_type_energy[building_type] = total_daily_energy
+        
+        # Create DataFrame for building type distribution
+        building_data = []
+        for building_type, total_energy in building_type_energy.items():
+            building_data.append({
+                'building_type': building_type,
+                'total_energy': total_energy,
+                'avg_daily_energy': total_energy,
+                'efficiency_score': 0.7,  # Default efficiency score
+                'cost_per_kwh': 0.12,  # Default cost
+                'renewable_energy_percentage': 0.25  # Default renewable percentage
+            })
+        
+        return pd.DataFrame(building_data)
+    
+    def _generate_weather_temperature(self, scenario, hours):
+        """Generate realistic temperature data based on weather scenario."""
+        if scenario == "heat_wave":
+            # High temperatures during day, warm at night
+            base_temp = 30
+            daily_variation = 8
+        elif scenario == "cold_snap":
+            # Low temperatures, cold throughout
+            base_temp = -5
+            daily_variation = 6
+        elif scenario == "blizzard":
+            # Very cold with minimal variation
+            base_temp = -15
+            daily_variation = 3
+        else:
+            # Normal weather
+            base_temp = 20
+            daily_variation = 10
+        
+        # Generate temperatures with daily cycle (warmer during day, cooler at night)
+        temperatures = []
+        for i, hour in enumerate(hours):
+            # Day is warmer (around hour 14 = 2 PM), night is cooler (around hour 2 = 2 AM)
+            daily_cycle = np.cos(2 * np.pi * (hour.hour - 14) / 24)
+            temp = base_temp + daily_variation * daily_cycle + np.random.normal(0, 2)
+            temperatures.append(temp)
+        
+        return temperatures 

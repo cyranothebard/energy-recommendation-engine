@@ -118,10 +118,15 @@ def main():
     try:
         # Run the Dash application
         logger.info(f"Starting dashboard server on {DashboardConfig.HOST}:{DashboardConfig.PORT}")
+        
+        # Use more explicit server configuration
         app.run(
             debug=DashboardConfig.DEBUG,
             host=DashboardConfig.HOST,
-            port=DashboardConfig.PORT
+            port=DashboardConfig.PORT,
+            use_reloader=False,  # Disable reloader to prevent duplicate processes
+            threaded=True,       # Enable threading for better performance
+            processes=1          # Use single process to avoid conflicts
         )
         
     except KeyboardInterrupt:
@@ -131,6 +136,8 @@ def main():
     except Exception as e:
         logger.error(f"Dashboard failed to start: {e}")
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
