@@ -6,6 +6,20 @@ data/raw/
 data/processed/
 !data/sample/
 
+# Model files
+*.pth
+*.pt
+*.model
+models/*/
+
+# Visualizations and exports
+*.png
+*.jpg
+*.jpeg
+*/visualizations/
+*/exports/
+results/reports/visualizations/
+
 # Jupyter
 .ipynb_checkpoints/
 */.ipynb_checkpoints/*
