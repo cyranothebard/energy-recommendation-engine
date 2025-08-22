@@ -26,12 +26,15 @@ from src.energy_recommender.models.forecasting.demand_simulation import generate
 def setup_training_environment():
     """Set up directories and environment for LSTM training"""
     
-    # Create model storage directory
-    model_dir = "models/lstm_forecasting"
+    # Get the directory where this script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Create model storage directory within the project
+    model_dir = os.path.join(script_dir, "src", "energy_recommender", "models", "forecasting", "trained_models")
     os.makedirs(model_dir, exist_ok=True)
     
-    # Create results directory
-    results_dir = "results/lstm_training"
+    # Create results directory within the project
+    results_dir = os.path.join(script_dir, "src", "energy_recommender", "models", "forecasting", "results")
     os.makedirs(results_dir, exist_ok=True)
     
     print("🏗️ Training environment setup:")
@@ -203,6 +206,209 @@ def plot_training_history(history, results_dir):
     
     return plot_path
 
+def create_rmse_cohort_analysis(lstm_model, all_scenarios, results_dir):
+    """Create comprehensive RMSE analysis by cohort and weather scenario"""
+    
+    print("\n📊 CREATING RMSE PERFORMANCE ANALYSIS BY COHORT")
+    print("=" * 60)
+    
+    # Calculate RMSE for each cohort in each scenario
+    rmse_results = {}
+    
+    # Scenarios to analyze (including normal baseline)
+    target_scenarios = ['normal_operations', 'heat_wave', 'cold_snap', 'blizzard']
+    scenario_labels = {
+        'normal_operations': 'Normal Weather',
+        'heat_wave': 'Heat Wave (95°F+)',
+        'cold_snap': 'Cold Snap (<20°F)',
+        'blizzard': 'Blizzard Conditions'
+    }
+    
+    for scenario_name in target_scenarios:
+        if scenario_name not in all_scenarios:
+            print(f"   ⚠️ Scenario '{scenario_name}' not found, skipping...")
+            continue
+            
+        print(f"\n🔍 Analyzing RMSE for {scenario_name}...")
+        
+        grid_data = all_scenarios[scenario_name]['grid_data']
+        
+        # Need sufficient data for predictions (72+ hours)
+        if len(grid_data) < 96:
+            print(f"   ⚠️ Insufficient data ({len(grid_data)} hours) for robust RMSE analysis")
+            continue
+        
+        try:
+            # Use sliding window approach for robust RMSE calculation
+            scenario_rmse = {}
+            window_size = 48  # 48-hour lookback
+            forecast_horizon = 24  # 24-hour forecast
+            
+            # Create multiple prediction windows
+            num_windows = min(5, (len(grid_data) - window_size - forecast_horizon) // 24)
+            
+            if num_windows < 1:
+                print(f"   ⚠️ Cannot create prediction windows for {scenario_name}")
+                continue
+            
+            all_rmse_values = {}
+            
+            for window_idx in range(num_windows):
+                start_idx = window_idx * 24
+                input_end = start_idx + window_size
+                forecast_end = input_end + forecast_horizon
+                
+                # Get input data and actual future values
+                input_data = grid_data.iloc[start_idx:input_end]
+                actual_data = grid_data.iloc[input_end:forecast_end]
+                
+                # Generate predictions
+                forecasts = lstm_model.predict_cohort_demands(input_data)
+                
+                # Calculate RMSE for each cohort
+                for cohort_name, forecast in forecasts.items():
+                    actual_col = f'demand_mw_{cohort_name}'
+                    
+                    if actual_col in actual_data.columns:
+                        actual_values = actual_data[actual_col].values
+                        
+                        # Calculate RMSE
+                        rmse = np.sqrt(np.mean((forecast - actual_values) ** 2))
+                        
+                        if cohort_name not in all_rmse_values:
+                            all_rmse_values[cohort_name] = []
+                        all_rmse_values[cohort_name].append(rmse)
+            
+            # Average RMSE across windows for each cohort
+            for cohort_name, rmse_list in all_rmse_values.items():
+                scenario_rmse[cohort_name] = {
+                    'mean_rmse': np.mean(rmse_list),
+                    'std_rmse': np.std(rmse_list),
+                    'windows_tested': len(rmse_list)
+                }
+            
+            rmse_results[scenario_name] = scenario_rmse
+            
+            print(f"   ✅ Analyzed {len(scenario_rmse)} cohorts with {num_windows} prediction windows")
+            
+        except Exception as e:
+            print(f"   ❌ RMSE analysis failed for {scenario_name}: {str(e)}")
+    
+    if not rmse_results:
+        print("❌ No RMSE results generated")
+        return None, None
+    
+    # Create comprehensive visualization
+    print(f"\n📈 Creating RMSE performance visualization...")
+    
+    # Organize data for plotting
+    cohort_names = []
+    scenario_data = {scenario: [] for scenario in target_scenarios if scenario in rmse_results}
+    
+    # Get all cohorts that appear in at least one scenario
+    all_cohorts = set()
+    for scenario_rmse in rmse_results.values():
+        all_cohorts.update(scenario_rmse.keys())
+    
+    cohort_names = sorted(list(all_cohorts))
+    
+    # Extract RMSE values for each scenario and cohort
+    for scenario_name in scenario_data.keys():
+        scenario_rmse = rmse_results[scenario_name]
+        rmse_values = []
+        
+        for cohort in cohort_names:
+            if cohort in scenario_rmse:
+                rmse_values.append(scenario_rmse[cohort]['mean_rmse'])
+            else:
+                rmse_values.append(np.nan)  # Missing data
+        
+        scenario_data[scenario_name] = rmse_values
+    
+    # Create the visualization
+    fig, ax = plt.subplots(1, 1, figsize=(14, 8))
+    
+    # Plot: Grouped Bar Chart with Average RMSE Lines
+    x_pos = np.arange(len(cohort_names))
+    bar_width = 0.2
+    colors = ['#2E86C1', '#E74C3C', '#F39C12', '#8E44AD']
+    
+    # Calculate average RMSE for each scenario (for horizontal lines)
+    scenario_averages = {}
+    
+    for i, (scenario_name, rmse_values) in enumerate(scenario_data.items()):
+        label = scenario_labels.get(scenario_name, scenario_name.replace('_', ' ').title())
+        offset = (i - len(scenario_data)/2 + 0.5) * bar_width
+        color = colors[i % len(colors)]
+        
+        # Filter out NaN values for plotting
+        plot_x = []
+        plot_y = []
+        valid_rmse = []
+        
+        for j, rmse in enumerate(rmse_values):
+            if not np.isnan(rmse):
+                plot_x.append(x_pos[j] + offset)
+                plot_y.append(rmse)
+                valid_rmse.append(rmse)
+        
+        # Plot bars
+        ax.bar(plot_x, plot_y, bar_width, label=label, color=color, alpha=0.8)
+        
+        # Calculate and store average for horizontal line
+        if valid_rmse:
+            avg_rmse = np.mean(valid_rmse)
+            scenario_averages[scenario_name] = {'avg': avg_rmse, 'color': color, 'label': label}
+    
+    # Add horizontal lines for average RMSE by scenario
+    line_styles = ['-', '--', '-.', ':']
+    for i, (scenario_name, avg_data) in enumerate(scenario_averages.items()):
+        ax.axhline(y=avg_data['avg'], color=avg_data['color'], 
+                  linestyle=line_styles[i % len(line_styles)], 
+                  linewidth=2, alpha=0.7,
+                  label=f"{avg_data['label']} Avg: {avg_data['avg']:.2f} MW")
+    
+    ax.set_xlabel('Building Cohorts', fontweight='bold', fontsize=12)
+    ax.set_ylabel('RMSE (MW)', fontweight='bold', fontsize=12)
+    ax.set_title('LSTM Forecasting Performance by Cohort and Weather Scenario', 
+                fontweight='bold', pad=20, fontsize=14)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels([name.replace('_', ' ').title() for name in cohort_names], 
+                      rotation=45, ha='right')
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    
+    # Save visualization
+    plot_path = os.path.join(results_dir, 'cohort_weather_analysis.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    print(f"   ✅ Cohort weather analysis saved: {plot_path}")
+    
+    # Create summary statistics
+    summary_stats = []
+    for scenario_name, scenario_rmse in rmse_results.items():
+        rmse_values = [data['mean_rmse'] for data in scenario_rmse.values()]
+        summary_stats.append({
+            'scenario': scenario_labels.get(scenario_name, scenario_name),
+            'avg_rmse_mw': np.mean(rmse_values),
+            'median_rmse_mw': np.median(rmse_values),
+            'max_rmse_mw': np.max(rmse_values),
+            'cohorts_analyzed': len(rmse_values)
+        })
+    
+    summary_df = pd.DataFrame(summary_stats)
+    
+    print(f"\n🎯 RMSE PERFORMANCE SUMMARY:")
+    print(summary_df.round(3))
+    
+    # Save detailed results
+    results_path = os.path.join(results_dir, 'rmse_analysis_detailed.csv')
+    summary_df.to_csv(results_path, index=False)
+    print(f"   Detailed results saved: {results_path}")
+    
+    return rmse_results, summary_df
+
 def test_sample_predictions(lstm_model, all_scenarios, results_dir):
     """Generate and analyze sample predictions from trained LSTM"""
     
@@ -323,6 +529,9 @@ def main():
         # Create training visualizations
         plot_training_history(history, results_dir)
         
+        # Create comprehensive RMSE analysis
+        rmse_results, rmse_summary = create_rmse_cohort_analysis(lstm_model, all_scenarios, results_dir)
+        
         # Test sample predictions
         sample_predictions = test_sample_predictions(lstm_model, all_scenarios, results_dir)
         
@@ -337,11 +546,13 @@ def main():
         print(f"   Model: {model_dir}/multi_cohort_lstm_model.pth")
         print(f"   Config: {model_dir}/multi_cohort_lstm_config.pkl")
         print(f"   Training plots: {results_dir}/pytorch_lstm_training_history.png")
+        print(f"   RMSE analysis: {results_dir}/rmse_cohort_weather_analysis.png")
+        print(f"   Performance summary: {results_dir}/rmse_analysis_detailed.csv")
         print(f"   Prediction results: {results_dir}/sample_predictions.csv")
         
         print(f"\n🚀 Ready for integration with portfolio optimization pipeline!")
         
-        return lstm_model, history, sample_predictions
+        return lstm_model, history, sample_predictions, rmse_results
         
     except Exception as e:
         print(f"\n❌ Training pipeline failed: {str(e)}")
@@ -357,4 +568,4 @@ if __name__ == "__main__":
         torch.cuda.manual_seed(42)
     
     # Run training pipeline
-    trained_model, training_history, predictions = main()
+    trained_model, training_history, predictions, rmse_analysis = main()
