@@ -371,38 +371,43 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col([
+                    html.Div([
+                        # Metric 1
+                        html.Div([
+                            html.I(className="fas fa-leaf fa-2x text-success me-3"),
                             html.Div([
+                                html.H4("Total Energy Saved", className="text-muted fw-bold mb-1"),
                                 html.Div([
-                                    html.I(className="fas fa-leaf fa-2x text-success mb-2"),
-                                    html.H4("Total Energy Saved", className="text-muted fw-bold mb-2"),
-                                    html.H2("1,234 kWh", id="energy-saved", className="text-success fw-bold mb-1"),
+                                    html.H2("1,234 kWh", id="energy-saved", className="text-success fw-bold mb-0 me-2"),
                                     html.Small("+12% from last month", className="text-success")
-                                ], className="text-center p-3")
-                            ], className="h-100 d-flex flex-column justify-content-center")
-                        ], width={"size": 12, "md": 4}, className="mb-3 mb-md-0"),
-                        dbc.Col([
+                                ], className="d-flex align-items-baseline")
+                            ])
+                        ], className="d-flex align-items-center"),
+                        
+                        # Metric 2
+                        html.Div([
+                            html.I(className="fas fa-dollar-sign fa-2x text-info me-3"),
                             html.Div([
+                                html.H4("Cost Reduction", className="text-muted fw-bold mb-1"),
                                 html.Div([
-                                    html.I(className="fas fa-dollar-sign fa-2x text-info mb-2"),
-                                    html.H4("Cost Reduction", className="text-muted fw-bold mb-2"),
-                                    html.H2("$567", id="cost-reduction", className="text-info fw-bold mb-1"),
+                                    html.H2("$567", id="cost-reduction", className="text-info fw-bold mb-0 me-2"),
                                     html.Small("+8% from last month", className="text-info")
-                                ], className="text-center p-3")
-                            ], className="h-100 d-flex flex-column justify-content-center")
-                        ], width={"size": 12, "md": 4}, className="mb-3 mb-md-0"),
-                        dbc.Col([
+                                ], className="d-flex align-items-baseline")
+                            ])
+                        ], className="d-flex align-items-center"),
+                        
+                        # Metric 3
+                        html.Div([
+                            html.I(className="fas fa-tachometer-alt fa-2x text-warning me-3"),
                             html.Div([
+                                html.H4("Efficiency Score", className="text-muted fw-bold mb-1"),
                                 html.Div([
-                                    html.I(className="fas fa-tachometer-alt fa-2x text-warning mb-2"),
-                                    html.H4("Efficiency Score", className="text-muted fw-bold mb-2"),
-                                    html.H2("78%", id="efficiency-score", className="text-warning fw-bold mb-1"),
+                                    html.H2("78%", id="efficiency-score", className="text-warning fw-bold mb-0 me-2"),
                                     html.Small("+5% from last month", className="text-warning")
-                                ], className="text-center p-3")
-                            ], className="h-100 d-flex flex-column justify-content-center")
-                        ], width={"size": 12, "md": 4})
-                    ])
+                                ], className="d-flex align-items-baseline")
+                            ])
+                        ], className="d-flex align-items-center")
+                    ], className="d-flex justify-content-between align-items-center flex-wrap gap-3 p-2")
                 ])
             ], className="bg-white border-0 shadow-sm")
         ])
@@ -562,6 +567,20 @@ app.layout = dbc.Container([
         ], className="bg-white border-0 shadow-sm")
     ], className="grid-row"),
     
+    # Row 2.5: Grid Strain Timeline (Full Width)
+    html.Div([
+        dbc.Card([
+            dbc.CardBody([
+                html.H4([
+                    html.I(className="fas fa-exclamation-triangle me-2"),
+                    "Grid Strain Timeline"
+                ], className="mb-3 fw-bold text-danger"),
+                html.P("Total demand vs strain thresholds across scenarios", className="text-muted mb-3"),
+                dcc.Graph(id="grid-strain-timeline-chart", style={"height": "450px", "width": "100%"}, config={"responsive": True})
+            ])
+        ], className="bg-white border-0 shadow-sm")
+    ], className="full-width-row"),
+
     # Row 3: Building Cohort Heatmap (Full Width)
     html.Div([
         dbc.Card([
@@ -865,6 +884,26 @@ def update_scenario_comparison(n_clicks):
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     except Exception as e:
         print(f"Error updating scenario comparison: {e}")
+        return go.Figure().add_annotation(text="Chart loading...", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+
+@app.callback(
+    Output("grid-strain-timeline-chart", "figure"),
+    Input("load-lstm-btn", "n_clicks")
+)
+def update_grid_strain_timeline(n_clicks):
+    """Update grid strain timeline chart."""
+    try:
+        if not n_clicks:
+            return go.Figure().add_annotation(text="Please load LSTM data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+
+        data_manager = DataManager("data")
+        lstm_data = data_manager.load_lstm_integration_results()
+
+        if lstm_data:
+            return EnergyVisualizations.create_grid_strain_timeline(lstm_data)
+        return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    except Exception as e:
+        print(f"Error updating grid strain timeline: {e}")
         return go.Figure().add_annotation(text="Chart loading...", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
 
 # Callback to update performance validation chart
