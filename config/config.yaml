@@ -1,0 +1,231 @@
+# Energy Recommendation System - Configuration
+# Configuration settings for production ML energy system
+
+# Data Configuration
+data:
+  # Building data settings
+  buildings:
+    data_path: "data/raw/nrel_building_stock"
+    num_buildings: 8111
+    building_types: 15
+    hvac_configurations: 34
+    
+  # Weather data settings
+  weather:
+    data_path: "data/raw/weather"
+    lookback_hours: 48
+    forecast_hours: 24
+    climate_zone: "massachusetts"
+    
+  # Feature engineering settings
+  features:
+    # Building characteristics
+    building:
+      - square_footage
+      - building_type
+      - hvac_system
+      - insulation_level
+      - window_type
+      - occupancy_patterns
+      
+    # Weather features
+    weather:
+      - temperature
+      - humidity
+      - wind_speed
+      - solar_radiation
+      - precipitation
+      
+    # Temporal features
+    temporal:
+      - hour_of_day
+      - day_of_week
+      - month
+      - season
+      - holiday_indicator
+      
+  # Data validation
+  validation:
+    missing_data_threshold: 0.2
+    outlier_detection: true
+    data_quality_checks: true
+
+# Model Configuration
+models:
+  # LSTM forecasting model
+  lstm_forecaster:
+    input_size: 625
+    hidden_size: 128
+    num_layers: 2
+    dropout: 0.2
+    learning_rate: 0.001
+    batch_size: 32
+    epochs: 100
+    early_stopping_patience: 10
+    
+  # Compliance prediction model
+  compliance_predictor:
+    model_type: "logistic_regression"
+    C: 1.0
+    max_iter: 1000
+    random_state: 42
+    
+  # Portfolio optimization
+  portfolio_optimizer:
+    optimization_method: "scipy"
+    max_iterations: 1000
+    tolerance: 1e-6
+    constraint_tolerance: 1e-6
+    
+  # Model evaluation
+  evaluation:
+    cv_folds: 5
+    test_size: 0.2
+    random_state: 42
+    scoring_metrics:
+      - mape
+      - rmse
+      - mae
+      - r2
+
+# Energy System Configuration
+energy_system:
+  # Grid parameters
+  grid:
+    base_demand: 1000  # MW
+    peak_demand: 1500  # MW
+    reserve_margin: 0.15
+    
+  # Demand response parameters
+  demand_response:
+    target_reduction: 0.054  # 5.4% reduction
+    compliance_rate: 0.363   # 36.3% compliance
+    max_participation: 0.7   # 70% max participation
+    
+  # Building constraints
+  building_constraints:
+    min_comfort_temp: 68  # Fahrenheit
+    max_comfort_temp: 78  # Fahrenheit
+    max_demand_reduction: 0.3  # 30% max reduction
+    
+  # Economic parameters
+  economics:
+    electricity_price: 0.12  # $/kWh
+    demand_response_incentive: 0.05  # $/kWh
+    blackout_cost: 1000000  # $/MW-hour
+
+# Performance Configuration
+performance:
+  # Latency requirements
+  latency:
+    max_processing_time: 30  # seconds
+    target_processing_time: 20  # seconds
+    timeout_threshold: 35  # seconds
+    
+  # Memory requirements
+  memory:
+    max_memory_usage: 50  # MB
+    target_memory_usage: 40  # MB
+    memory_warning_threshold: 45  # MB
+    
+  # Scalability settings
+  scalability:
+    max_buildings: 100000
+    batch_size: 1000
+    parallel_processing: true
+    num_workers: 4
+
+# System Configuration
+system:
+  # Logging and monitoring
+  logging:
+    level: "INFO"
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    file: "logs/energy_recommendation.log"
+    
+  # Performance monitoring
+  monitoring:
+    enable_metrics: true
+    metrics_interval: 60  # seconds
+    alert_thresholds:
+      latency: 35  # seconds
+      memory: 45   # MB
+      error_rate: 0.01  # 1%
+      
+  # Security
+  security:
+    data_encryption: true
+    access_control: true
+    audit_logging: true
+
+# Output Configuration
+output:
+  # Results directory
+  results_dir: "results"
+  
+  # Visualization settings
+  visualization:
+    figure_size: [12, 8]
+    dpi: 300
+    style: "seaborn-v0_8"
+    
+  # Report generation
+  reports:
+    generate_html: true
+    generate_pdf: true
+    include_plots: true
+    include_metrics: true
+    
+  # Model artifacts
+  model_artifacts:
+    save_models: true
+    model_format: "pytorch"
+    checkpoint_frequency: 10  # epochs
+
+# Development Configuration
+development:
+  # Testing
+  testing:
+    run_tests: true
+    coverage_threshold: 80
+    test_data_size: 1000
+    benchmark_tests: true
+    
+  # Debugging
+  debugging:
+    debug_mode: false
+    verbose_logging: false
+    save_intermediate_results: false
+    profile_performance: false
+    
+  # Development tools
+  tools:
+    use_jupyter: true
+    enable_profiling: false
+    memory_profiling: false
+    gpu_acceleration: false
+
+# Production Configuration
+production:
+  # Deployment settings
+  deployment:
+    containerized: true
+    cloud_ready: true
+    auto_scaling: true
+    health_checks: true
+    
+  # Monitoring and alerting
+  monitoring:
+    enable_prometheus: true
+    enable_grafana: true
+    alert_channels:
+      - email
+      - slack
+      - pagerduty
+      
+  # Backup and recovery
+  backup:
+    model_backup: true
+    data_backup: true
+    backup_frequency: "daily"
+    retention_days: 30
